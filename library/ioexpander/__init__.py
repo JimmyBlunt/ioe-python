@@ -349,8 +349,9 @@ class IOE():
     def i2c_read8(self, reg):
         """Read a single (8bit) register from the device."""
         msg_w = i2c_msg.write(self._i2c_addr, [reg])
+        self._i2c_dev.i2c_rdwr(msg_w)
         msg_r = i2c_msg.read(self._i2c_addr, 1)
-        self._i2c_dev.i2c_rdwr(msg_w,msg_r)
+        self._i2c_dev.i2c_rdwr(msg_r)
 
         return list(msg_r)[0]
 
@@ -390,6 +391,46 @@ class IOE():
         self._encoder_last[channel] = value
 
         return self._encoder_offset[channel] + value
+
+    def set_rotary_encoder(self, channel,number):
+        """set the step count from a rotary encoder."""
+        channel -= 1
+        last = self._encoder_last[channel]
+        offset = self._encoder_offset[channel]
+        #print("lastdiff_rotary_encoder  layst: " + str(last))
+        #print("diff_rotary_encoder  offset: " + str(offset))
+
+        reg = [REG_ENC_1_COUNT, REG_ENC_2_COUNT, REG_ENC_3_COUNT, REG_ENC_4_COUNT][channel]
+        #print("read before write : " + str(self.i2c_read8(reg)))
+        self.i2c_write8(reg,number)
+        #print("read after write REG: " + str(self.i2c_read8(reg)))
+
+
+    def diff_rotary_encoder(self, channel):
+        """Read the step count from a rotary encoder and return diff."""
+        channel -= 1
+        last = self._encoder_last[channel]
+        offset = self._encoder_offset[channel]
+        #print("lastdiff_rotary_encoder  layst: " + str(last))
+        #print("diff_rotary_encoder  offset: " + str(offset))
+
+        reg = [REG_ENC_1_COUNT, REG_ENC_2_COUNT, REG_ENC_3_COUNT, REG_ENC_4_COUNT][channel]
+        value = self.i2c_read8(reg)
+        #print("readREG: " + str(self.i2c_read8(reg)))
+        if value & 0b10000000:
+            value -= 256
+
+        if last > 64 and value < -64:
+            self._encoder_offset[channel] += 256
+        if last < -64 and value > 64:
+            self._encoder_offset[channel] -= 256
+
+        self._encoder_last[channel] = value
+        #print("new value diff_rotary_encoder: " + str(value))
+        diff=offset + value - last
+        #print("new value diff_rotary_encoder: " + str(diff))
+        return  diff
+
 
     def set_bits(self, reg, bits):
         """Set the specified bits (using a mask) in a register."""
@@ -473,8 +514,13 @@ class IOE():
 
         """
         if self._interrupt_pin is not None:
-            self._gpio.add_event_detect(self._interrupt_pin, self._gpio.FALLING, callback=callback, bouncetime=1)
-
+            print("set Callbackfunction to run  : " + str(callback) + " and enable event detect for Pin: "  str(self._interrupt_pin))
+            try:
+                self._gpio.add_event_detect(self._interrupt_pin, self._gpio.FALLING, callback=callback, bouncetime=1)
+            except Exception as e:
+                print("add event_detect failed_:  self._gpio.add_event_detect(self._interrupt_pin, self._gpio.FALLING, callback=callback, bouncetime=1)")
+                print("Oops Problem within rgb_Volume(self)! ", e.__class__, "occurred.")
+                
     def _wait_for_flash(self):
         """Wait for the IOE to finish writing non-volatile memory."""
         t_start = time.time()
